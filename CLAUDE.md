@@ -255,3 +255,19 @@ moves to the next row to check.
   Pages that are plain scans are served as JPEGs (cached in data/scans); other PDF pages are sent as a
   one-page PDF and drawn in the browser with pdf.js 4. `Tayan_encoded.xlsx` needs its PDF chosen once
   (Tayan (1).pdf).
+
+## Settings, costs and the desktop shortcut (step 4, 2026-11-16)
+
+- Desktop and Start-menu shortcut "Auto-Encoder" (made by `scripts/create-shortcut.ps1`) runs
+  `start-app.vbs`, which runs `scripts/launch.js` with no window: it starts the server in the background
+  if it is not already running (building web/dist first if missing), waits for it, then opens the browser.
+  Server output goes to `data/logs/app.log`; if the server does not come up in 20 seconds the log opens.
+  `start-app.cmd` is the same app with a visible window, for troubleshooting.
+- The app has no window, so the header has a Quit button (POST /api/quit). It refuses while a job runs
+  unless confirmed.
+- Settings page: the API key (`engine/anthropic.js`). The key is stored in .env, tested against Anthropic
+  before saving (listing models, free), and only its last four characters are sent to the screens. Both
+  readers share one Claude client that is rebuilt when the key changes, so no restart is needed.
+- Costs: per client per month from the usage table (recorded since November 2026), plus this month's total
+  in the header.
+- Icon: `assets/app.ico` and `web/public/favicon.png`, drawn by `scripts/make-icon.js`.

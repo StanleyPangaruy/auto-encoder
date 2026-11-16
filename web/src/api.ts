@@ -88,6 +88,18 @@ export interface Progress {
   summary?: JobSummary;
 }
 
+export interface KeyStatus {
+  set: boolean;
+  ending: string | null;
+}
+
+export interface CostRow {
+  client_id: string;
+  month: string;
+  cost: number;
+  calls: number;
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, {
     method,
@@ -100,7 +112,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
-  status: () => request<{ apiKey: boolean; secondModel: string }>("GET", "/api/status"),
+  status: () => request<{ apiKey: boolean; secondModel: string; costThisMonth: number }>("GET", "/api/status"),
   clients: () => request<Client[]>("GET", "/api/clients"),
   createClient: (input: ClientInput) => request<Client>("POST", "/api/clients", input),
   updateClient: (id: string, input: Partial<ClientInput>) => request<Client>("PUT", `/api/clients/${id}`, input),
@@ -111,6 +123,11 @@ export const api = {
   startJob: (input: { clientId: string; kind: Kind; source: string; byPage?: boolean; sheet?: string }) => request<Job>("POST", "/api/jobs", input),
   secondPass: (id: number) => request<Job>("POST", `/api/jobs/${id}/second-pass`),
   open: (path: string) => request<{ opened: boolean }>("POST", "/api/open", { path }),
+  settings: () => request<{ apiKey: KeyStatus }>("GET", "/api/settings"),
+  testKey: () => request<{ ok: boolean; reason?: string }>("POST", "/api/settings/api-key/test"),
+  saveKey: (key: string) => request<{ apiKey: KeyStatus }>("PUT", "/api/settings/api-key", { key }),
+  costs: () => request<CostRow[]>("GET", "/api/costs"),
+  quit: (force = false) => request<{ stopping: boolean }>("POST", "/api/quit", { force }),
 };
 
 export const MODELS = [

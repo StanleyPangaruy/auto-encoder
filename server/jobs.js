@@ -27,6 +27,9 @@ const emit = (jobId, event) => {
   events.emit(String(jobId), message);
 };
 
+/** Whether a job is running or waiting to run. */
+export const isBusy = () => running || queue.length > 0;
+
 /** Subscribes to a job's progress. Returns a function that unsubscribes. */
 export function watch(jobId, listener) {
   const key = String(jobId);

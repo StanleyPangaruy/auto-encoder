@@ -1,5 +1,6 @@
 @echo off
-rem Starts Auto-Encoder and opens it in the browser. Close this window to stop the app.
+rem Starts Auto-Encoder with a visible window, for troubleshooting: messages appear here. Close it to stop the app.
+rem Day to day, use the desktop shortcut instead (start-app.vbs), which runs it without a window.
 cd /d "%~dp0"
 if not exist "web\dist\index.html" (
   echo Building the screens for the first time...

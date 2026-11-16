@@ -2,13 +2,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 import sharp from "sharp";
 import { MONTHS, ROOT } from "./settings.js";
 import { costOf } from "./pricing.js";
+import { getAnthropic } from "./anthropic.js";
 import { cleanTin, MANUAL } from "./rows.js";
 
 const cacheDir = (model) => path.join(ROOT, "data", "cache-2307", model);
@@ -67,8 +67,6 @@ What each field means:
 
 Copy figures exactly as they appear; do not calculate or correct them. These go into a tax return, so when a field is present but you cannot read it reliably, set it to null and add its name to illegible_fields (period, payor_tin, payor_name, payor_address, atc, amounts or tax_withheld) rather than guessing. Use notes for anything the bookkeeper should know, in one short sentence, or an empty string.`;
 
-let client;
-const getClient = () => (client ??= new Anthropic());
 
 // A scanned page is normally one JPEG wrapped in a PDF page. Taking that JPEG out keeps its full
 // resolution; a page sent as PDF is re-rendered smaller and the boxed TIN digits blur.
@@ -133,7 +131,7 @@ export async function readPage(fileHash, pageNumber, page, { model, effort = "hi
   const cacheFile = path.join(cacheDir(model), `${fileHash}-p${String(pageNumber).padStart(4, "0")}.json`);
   if (fs.existsSync(cacheFile)) return JSON.parse(fs.readFileSync(cacheFile, "utf8"));
 
-  const response = await getClient().messages.parse({
+  const response = await getAnthropic().messages.parse({
     model,
     max_tokens: 8000,
     output_config: { effort, format: zodOutputFormat(Certificate) },

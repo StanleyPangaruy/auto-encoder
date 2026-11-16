@@ -11,8 +11,9 @@ import { ROOT, resolve } from "../engine/settings.js";
 import { openDb } from "../engine/db.js";
 import { registerAllClients } from "../engine/clients.js";
 import { listClients, getClient, createClient, updateClient, listSources } from "./clients.js";
-import { enqueue, watch, SECOND_MODEL } from "./jobs.js";
+import { enqueue, watch, isBusy, SECOND_MODEL } from "./jobs.js";
 import { registerReviewRoutes } from "./review.js";
+import { keyStatus, testKey, saveKey } from "../engine/anthropic.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const WEB = path.join(ROOT, "web", "dist");
@@ -35,10 +36,24 @@ const insideOf = (dir, target) => {
 const publicJob = (job) => job && { id: job.id, clientId: job.client_id, kind: job.kind, source: job.source, status: job.status, error: job.error, options: job.options, summary: job.summary, createdAt: job.created_at, finishedAt: job.finished_at };
 
 // ---- status
+const thisMonth = () => new Date().toISOString().slice(0, 7);
 app.get("/api/status", async () => ({
-  apiKey: Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+  apiKey: keyStatus().set,
   secondModel: SECOND_MODEL,
+  costThisMonth: db.costByMonth().filter((c) => c.month === thisMonth()).reduce((sum, c) => sum + c.cost, 0),
 }));
+
+// ---- settings: the API key (only its last four characters are ever sent to the screens)
+app.get("/api/settings", async () => ({ apiKey: keyStatus() }));
+app.post("/api/settings/api-key/test", async () => (keyStatus().set ? testKey() : { ok: false, reason: "No key is set up yet." }));
+app.put("/api/settings/api-key", async (req) => {
+  const key = String(req.body?.key ?? "").trim();
+  if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)) throw fail(400, "That does not look like an Anthropic API key (it starts with sk-ant-).");
+  const test = await testKey(key);
+  if (!test.ok) throw fail(400, test.reason);
+  saveKey(key);
+  return { apiKey: keyStatus() };
+});
 
 // ---- clients
 app.get("/api/clients", async () => listClients());
@@ -136,8 +151,15 @@ app.get("/api/jobs/:id/events", (req, reply) => {
 // ---- review
 registerReviewRoutes(app, db);
 
-// ---- costs
+// ---- costs (recorded since the app and its command lines began keeping them, November 2026)
 app.get("/api/costs", async () => db.costByMonth());
+
+// ---- quitting: the app runs without a window, so the screens offer a way to stop it
+app.post("/api/quit", async (req, reply) => {
+  if (isBusy() && !req.body?.force) throw fail(409, "A job is still running. Quitting now stops it; it can be started again later at no extra cost for what was already read.");
+  reply.send({ stopping: true });
+  setTimeout(() => process.exit(0), 300);
+});
 
 // ---- open a workbook in Excel (only workbooks under output/)
 app.post("/api/open", async (req) => {

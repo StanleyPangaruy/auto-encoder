@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import sharp from "sharp";
 import { PARTICULARS, ROOT } from "./settings.js";
 import { costOf } from "./pricing.js";
+import { getAnthropic } from "./anthropic.js";
 import { splitPdf } from "./pdfpages.js";
 
 const MAX_IMAGE_EDGE = 2400;
@@ -83,8 +83,6 @@ ${addressRules(settings)}
 
 Accuracy matters more than completeness, because these figures go into tax filings. Read handwriting when you can make it out with confidence. When a field is present but you cannot read it reliably, set it to null and add its name to illegible_fields (one of: ${FIELDS.join(", ")}); a blank the bookkeeper fills in by hand is far better than a wrong digit. When a field simply is not on the document, set it to null and leave it out of illegible_fields. Set confidence to "low" when the scan is poor enough that the bookkeeper should compare the whole row against the paper. Use notes for anything the bookkeeper should know, in one short sentence, or an empty string.`;
 
-let anthropic;
-const getAnthropic = () => (anthropic ??= new Anthropic());
 
 // File extensions are unreliable (some scans have none), so sharp sniffs the real format.
 function toJpeg(buf, maxEdge) {
