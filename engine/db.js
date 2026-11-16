@@ -60,6 +60,27 @@ const MIGRATIONS = [
   `ALTER TABLE jobs ADD COLUMN status TEXT NOT NULL DEFAULT 'done';
    ALTER TABLE jobs ADD COLUMN error TEXT;
    ALTER TABLE jobs ADD COLUMN finished_at TEXT;`,
+  // Row ids must never be reused: when a workbook is re-read, its rows are deleted and inserted again, and a
+  // review screen still holding an old id must find nothing rather than a different row.
+  `CREATE TABLE rows_new (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id       INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+     client_id    TEXT NOT NULL REFERENCES clients(id),
+     kind         TEXT NOT NULL,
+     year         INTEGER,
+     sheet        TEXT NOT NULL,
+     position     INTEGER NOT NULL,
+     data         TEXT NOT NULL,
+     remarks      TEXT NOT NULL DEFAULT '',
+     source_file  TEXT NOT NULL DEFAULT '',
+     source_page  INTEGER,
+     checked      INTEGER NOT NULL DEFAULT 0,
+     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   INSERT INTO rows_new SELECT * FROM rows;
+   DROP TABLE rows;
+   ALTER TABLE rows_new RENAME TO rows;
+   CREATE INDEX rows_by_sheet ON rows (client_id, kind, year, sheet, position);`,
 ];
 
 const json = (value) => JSON.stringify(value ?? {});
@@ -212,6 +233,19 @@ function wrap(db) {
       const { remarks = current.remarks, checked = Boolean(current.checked), ...fields } = changes;
       const data = { ...parse(current.data), ...fields };
       db.prepare("UPDATE rows SET data = ?, remarks = ?, checked = ?, updated_at = datetime('now') WHERE id = ?").run(json(data), remarks, checked ? 1 : 0, id);
+    },
+
+    /** Moves rows between sheets or reorders them: `placements` is a list of { id, sheet, position }. */
+    placeRows(placements) {
+      const update = db.prepare("UPDATE rows SET sheet = ?, position = ? WHERE id = ?");
+      transaction(db, () => {
+        for (const { id, sheet, position } of placements) update.run(sheet, position, id);
+      });
+    },
+
+    getRow(id) {
+      const r = db.prepare("SELECT * FROM rows WHERE id = ?").get(id);
+      return r ? { ...parse(r.data), id: r.id, jobId: r.job_id, clientId: r.client_id, kind: r.kind, year: r.year, sheet: r.sheet, position: r.position, remarks: r.remarks, page: r.source_page, checked: Boolean(r.checked) } : null;
     },
 
     recordUsage({ jobId = null, clientId = null, model, inputTokens, outputTokens, cost }) {

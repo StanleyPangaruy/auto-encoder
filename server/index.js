@@ -12,6 +12,7 @@ import { openDb } from "../engine/db.js";
 import { registerAllClients } from "../engine/clients.js";
 import { listClients, getClient, createClient, updateClient, listSources } from "./clients.js";
 import { enqueue, watch, SECOND_MODEL } from "./jobs.js";
+import { registerReviewRoutes } from "./review.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const WEB = path.join(ROOT, "web", "dist");
@@ -131,6 +132,9 @@ app.get("/api/jobs/:id/events", (req, reply) => {
     clearInterval(ping);
   });
 });
+
+// ---- review
+registerReviewRoutes(app, db);
 
 // ---- costs
 app.get("/api/costs", async () => db.costByMonth());

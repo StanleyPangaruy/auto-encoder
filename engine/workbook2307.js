@@ -1,6 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
 import ExcelJS from "exceljs";
+import { saveWorkbookFile } from "./savefile.js";
 import { MANUAL } from "./rows.js";
 
 const HEADERS = ["NO.", "MONTH", "YR", "TIN", "COMPANY", "LN", "FN", "MN", "ADDRESS", "CITY", "AMOUNT", "ATC", "RATE", "WTAX", "REMARKS", "PAGE"];
@@ -11,7 +10,7 @@ const MONEY = "#,##0.00";
 const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
 
 /** Writes the 2307 list in the order given. Columns A to N match the user's sheet; REMARKS and PAGE are extras. */
-export async function write2307Workbook(file, rows) {
+export async function write2307Workbook(file, rows, options = {}) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("2307", { views: [{ state: "frozen", ySplit: 2 }] });
   ws.columns = WIDTHS.map((width) => ({ width }));
@@ -62,24 +61,8 @@ export async function write2307Workbook(file, rows) {
     }
   });
 
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  await wb.xlsx.writeFile(tmp);
-  try {
-    if (fs.existsSync(file)) {
-      const backupDir = path.join(path.dirname(file), "backup");
-      fs.mkdirSync(backupDir, { recursive: true });
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      fs.copyFileSync(file, path.join(backupDir, `${path.basename(file, ".xlsx")} ${stamp}.xlsx`));
-    }
-    fs.renameSync(tmp, file);
-  } catch (err) {
-    fs.rmSync(tmp, { force: true });
-    if (["EBUSY", "EPERM", "EACCES"].includes(err.code)) {
-      throw new Error(`${path.basename(file)} is open in Excel. Close it and run again; nothing was lost.`);
-    }
-    throw err;
-  }
+  // options.backupEvery: see saveWorkbookFile.
+  await saveWorkbookFile(wb, file, options);
 }
 
 /** Reads a 2307 list back, including any corrections typed into it in Excel. */

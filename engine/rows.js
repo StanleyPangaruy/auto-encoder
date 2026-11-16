@@ -144,10 +144,14 @@ export function mergeRows(existing, incoming, { sort = true } = {}) {
   const droppedReceipts = rows.filter((r) => !kept.includes(r));
 
   // Some clients want rows left in the order the files were read.
-  if (sort) kept.sort((a, b) => {
-    // Documents without a number (utility bills) go last, as in the user's sheets.
-    if (!a.number !== !b.number) return a.number ? -1 : 1;
-    return a.day.localeCompare(b.day) || a.number.localeCompare(b.number, undefined, { numeric: true });
-  });
+  if (sort) sortRows(kept);
   return { rows: kept, duplicates, droppedReceipts };
+}
+
+/** Sorts a month sheet's rows in place: by day, then number; documents without a number (utility bills) last. */
+export function sortRows(rows) {
+  return rows.sort((a, b) => {
+    if (!a.number !== !b.number) return a.number ? -1 : 1;
+    return (a.day ?? "").localeCompare(b.day ?? "") || (a.number ?? "").localeCompare(b.number ?? "", undefined, { numeric: true });
+  });
 }

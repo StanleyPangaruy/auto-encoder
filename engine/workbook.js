@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
+import { saveWorkbookFile } from "./savefile.js";
 import { MONTHS, UNDATED } from "./settings.js";
 import { MANUAL } from "./rows.js";
 
@@ -143,7 +144,7 @@ function writeSheet(wb, name, rows) {
 }
 
 /** Writes a year's workbook, one sheet per month, keeping a backup of the previous file. */
-export async function writeWorkbook(file, sheets) {
+export async function writeWorkbook(file, sheets, options = {}) {
   const wb = new ExcelJS.Workbook();
   const names = [...SHEET_ORDER.filter((n) => n in sheets), ...Object.keys(sheets).filter((n) => !SHEET_ORDER.includes(n))];
   for (const name of names) {
@@ -158,22 +159,6 @@ export async function writeWorkbook(file, sheets) {
     wb.worksheets.forEach((ws, i) => (ws.views = [{ ...ws.views[0], tabSelected: i === active }]));
     wb.views = [{ x: 0, y: 0, width: 20000, height: 12000, firstSheet: 0, activeTab: active, visibility: "visible" }];
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  await wb.xlsx.writeFile(tmp);
-  try {
-    if (fs.existsSync(file)) {
-      const backupDir = path.join(path.dirname(file), "backup");
-      fs.mkdirSync(backupDir, { recursive: true });
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      fs.copyFileSync(file, path.join(backupDir, `${path.basename(file, ".xlsx")} ${stamp}.xlsx`));
-    }
-    fs.renameSync(tmp, file);
-  } catch (err) {
-    fs.rmSync(tmp, { force: true });
-    if (["EBUSY", "EPERM", "EACCES"].includes(err.code)) {
-      throw new Error(`${path.basename(file)} is open in Excel. Close it and run again; nothing was lost.`);
-    }
-    throw err;
-  }
+  // options.backupEvery: see saveWorkbookFile.
+  await saveWorkbookFile(wb, file, options);
 }

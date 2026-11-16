@@ -126,3 +126,73 @@ export const peso = (n: number | null | undefined) =>
 export const dollars = (n: number | null | undefined) => `$${(n ?? 0).toFixed(2)}`;
 
 export const fileName = (path: string) => path.split("/").pop() ?? path;
+
+// ---- review
+
+export interface SheetInfo {
+  name: string;
+  rows: number;
+  toCheck: number;
+}
+
+export interface Workbook {
+  file: string;
+  clientId: string;
+  kind: Kind;
+  name: string;
+  sheets: SheetInfo[];
+  toCheck: number;
+  rows: number;
+}
+
+/** A workbook row as the review screen edits it. Purchases and 2307 rows share most fields. */
+export interface ReviewRow {
+  id: number;
+  sheet: string;
+  page: number | null;
+  source?: string;
+  remarks: string;
+  checked: boolean;
+  month?: string;
+  day?: string;
+  number?: string;
+  tin?: string;
+  company?: string;
+  last?: string;
+  first?: string;
+  middle?: string;
+  address?: string;
+  city?: string;
+  nature?: string;
+  particulars?: string;
+  amount?: number | null;
+  vat?: "auto" | "manual";
+  net?: number | null;
+  inputVat?: number | null;
+  nonVat?: number | null;
+  atc?: string;
+  rate?: number | null;
+  wtax?: number | null;
+}
+
+export interface ScanInfo {
+  found: boolean;
+  kind?: Kind;
+  file?: string;
+  page?: number;
+  url?: string;
+  choices?: string[];
+}
+
+export const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+export const PARTICULARS = ["INVENTORY", "OFFICE SUPPLIES", "FUEL AND OIL", "UTILITIES EXPENSE", "REPRESENTATION EXPENSE"];
+export const MANUAL = "FOR MANUAL CHECKING";
+
+export const review = {
+  workbooks: (clientId: string) => request<Workbook[]>("GET", `/api/workbooks?client=${encodeURIComponent(clientId)}`),
+  rows: (file: string, sheet: string) =>
+    request<{ file: string; kind: Kind; sheets: SheetInfo[]; rows: ReviewRow[] }>("GET", `/api/workbooks/rows?file=${encodeURIComponent(file)}&sheet=${encodeURIComponent(sheet)}`),
+  save: (id: number, changes: Partial<ReviewRow> & { checked?: boolean }) => request<ReviewRow>("PUT", `/api/rows/${id}`, changes),
+  scanInfo: (id: number) => request<ScanInfo>("GET", `/api/rows/${id}/scan-info`),
+  setPdf: (file: string, pdf: string) => request<{ ok: boolean }>("PUT", "/api/workbooks/pdf", { file, pdf }),
+};

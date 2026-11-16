@@ -53,3 +53,14 @@ test("app settings are stored and replaced", () => {
   assert.equal(db.getSetting("theme"), "dark");
   db.close();
 });
+
+test("a row id is never given to another row after a workbook is re-read", () => {
+  const db = openDb(":memory:");
+  db.saveClient({ id: "cya", name: "CYA" });
+  const first = db.saveJob({ clientId: "cya", kind: "purchases", origin: "import", source: "w.xlsx", rows: [row({ number: "1" }), row({ number: "2" })] });
+  const oldIds = db.listRows("cya").map((r) => r.id);
+  db.raw.prepare("DELETE FROM jobs WHERE id = ?").run(first);
+  db.saveJob({ clientId: "cya", kind: "purchases", origin: "import", source: "w.xlsx", rows: [row({ number: "1" }), row({ number: "2" })] });
+  for (const id of oldIds) assert.equal(db.getRow(id), null);
+  db.close();
+});

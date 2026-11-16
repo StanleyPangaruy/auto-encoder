@@ -61,6 +61,18 @@ function scanOf(doc, page) {
   return null;
 }
 
+/** One page of a loaded PDF: { image } when it is a single scan sharp can open, otherwise { pdf }. */
+async function pageAt(source, i) {
+  let image = scanOf(source, source.getPage(i));
+  // A scan that will not decode falls back to the PDF page.
+  if (image && !(await sharp(image).metadata().catch(() => null))) image = null;
+  if (image) return { image };
+  const single = await PDFDocument.create();
+  const [page] = await single.copyPages(source, [i]);
+  single.addPage(page);
+  return { pdf: Buffer.from(await single.save()) };
+}
+
 /**
  * Returns one entry per page: { image } (a JPEG or TIFF buffer sharp can open) when the page is a single
  * scan, otherwise { pdf } (that page alone as a PDF).
@@ -68,18 +80,23 @@ function scanOf(doc, page) {
 export async function splitPdf(file) {
   const source = await PDFDocument.load(fs.readFileSync(file));
   const pages = [];
-  for (let i = 0; i < source.getPageCount(); i++) {
-    let image = scanOf(source, source.getPage(i));
-    // A scan that will not decode falls back to the PDF page.
-    if (image && !(await sharp(image).metadata().catch(() => null))) image = null;
-    if (image) {
-      pages.push({ image });
-      continue;
-    }
-    const single = await PDFDocument.create();
-    const [page] = await single.copyPages(source, [i]);
-    single.addPage(page);
-    pages.push({ pdf: Buffer.from(await single.save()) });
-  }
+  for (let i = 0; i < source.getPageCount(); i++) pages.push(await pageAt(source, i));
   return pages;
+}
+
+// The review screen asks for pages of the same PDF one after another; keeping the last few PDFs loaded
+// saves re-reading a 200 MB bundle for every page.
+const loaded = new Map();
+const KEEP = 2;
+
+/** One page (counting from 1) of a PDF, as splitPdf would return it. */
+export async function pdfPage(file, pageNumber) {
+  const key = `${file}|${fs.statSync(file).mtimeMs}`;
+  if (!loaded.has(key)) {
+    loaded.set(key, PDFDocument.load(fs.readFileSync(file)));
+    while (loaded.size > KEEP) loaded.delete(loaded.keys().next().value);
+  }
+  const source = await loaded.get(key);
+  if (pageNumber < 1 || pageNumber > source.getPageCount()) throw new Error(`The PDF has no page ${pageNumber}`);
+  return pageAt(source, pageNumber - 1);
 }

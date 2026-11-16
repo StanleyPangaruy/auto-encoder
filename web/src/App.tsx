@@ -6,9 +6,11 @@ import { ClientsPage } from "./pages/ClientsPage";
 import { EncodePage } from "./pages/EncodePage";
 import { JobPage } from "./pages/JobPage";
 import { JobsPage } from "./pages/JobsPage";
+import { ReviewPage } from "./pages/ReviewPage";
 
 const PAGES = [
   { to: "/encode", label: "Encode", hint: "Read new documents" },
+  { to: "/review", label: "Review", hint: "Check rows against the scans" },
   { to: "/jobs", label: "Jobs", hint: "What has been encoded" },
   { to: "/clients", label: "Clients", hint: "Add or change a client" },
 ];
@@ -57,6 +59,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/encode" replace />} />
           <Route path="/encode" element={<EncodePage />} />
+          <Route path="/review" element={<ReviewPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/jobs/:id" element={<JobPage />} />
           <Route path="/clients" element={<ClientsPage />} />

@@ -233,3 +233,25 @@ and opens the browser. `npm run build-web` rebuilds the screens after changing `
   web/dist (ignored by git). Screens: Encode, Jobs, Job (progress, results, re-read offer), Clients.
 - Rows in the database belong to the workbook they are in (`engine/record.js` syncs a workbook after each
   job). Jobs keep a summary, including a short list of the rows they added.
+
+## Review screen (step 3, 2026-11-16)
+
+The Review page shows a sheet's rows (those to check first), the scan each row came from, and the row's
+fields. Ctrl+S saves; Ctrl+Enter saves, clears the FOR MANUAL CHECKING remark (and so the shading) and
+moves to the next row to check.
+
+- Saving edits the row in the database, then rewrites the workbook from the database
+  (`engine/record.js` writeFromSnapshot). Reading a workbook into the database and writing it back gives an
+  identical file (checked on CYA, JJEL and Tai-An), so only edited rows change.
+- Before every save the app checks the workbook's modified time. If it changed (edited in Excel), the
+  workbook is read in again and the save is refused with a message; nothing typed in Excel is overwritten.
+  Opening a sheet re-reads a changed workbook too.
+- Backups during review: at most one per hour per workbook (`engine/savefile.js`, backupEvery).
+- Month-sheet clients: changing a row's month moves it to that month's sheet (or UNDATED) in date order.
+- Row ids are never reused (rows table uses AUTOINCREMENT, schema version 3): a screen holding a stale id
+  after a re-read gets "row no longer exists" instead of editing a different row.
+- Scans: `engine/scans.js` finds a purchases row's file by name under raw/<client> (two levels deep) and
+  page; a 2307 workbook's PDF is the one the user chose, the one its job recorded, or the same name.
+  Pages that are plain scans are served as JPEGs (cached in data/scans); other PDF pages are sent as a
+  one-page PDF and drawn in the browser with pdf.js 4. `Tayan_encoded.xlsx` needs its PDF chosen once
+  (Tayan (1).pdf).
