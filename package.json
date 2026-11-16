@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Encodes scanned supplier invoices and receipts into the monthly purchases workbook",
   "scripts": {
+    "app": "node server/index.js",
+    "build-web": "npm --prefix web run build",
     "encode": "node cli/purchases.js",
     "encode-2307": "node cli/bir2307.js",
     "check": "node scripts/check-testfiles.js",
@@ -13,7 +15,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
+    "@fastify/multipart": "^10.1.9",
+    "@fastify/static": "^10.1.11",
     "exceljs": "^4.4.0",
+    "fastify": "^5.12.8",
     "pdf-lib": "^1.17.1",
     "sharp": "^0.34.0",
     "zod": "^4.0.0"

@@ -5,7 +5,7 @@
 // --second-pass re-reads, with a stronger model, whatever the first model could not read cleanly.
 // --sheet names the sheet for file-order clients (default: the input folder or file name).
 // --keep leaves the source files where they are instead of moving them to <folder>/processed.
-// Each run is also recorded in the app database (data/app.db): the job, the rows it added, and its cost.
+// Each run is also recorded in the app database (data/app.db): the job and its cost, and the workbook's rows.
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -13,7 +13,7 @@ import { loadSettings } from "../engine/settings.js";
 import { listInputFiles, readPurchases, buildPurchaseRows, folderSheetName, savePurchaseWorkbooks } from "../engine/purchases.js";
 import { saveSuppliers } from "../engine/suppliers.js";
 import { openDb } from "../engine/db.js";
-import { registerClient } from "../engine/clients.js";
+import { syncPurchaseWorkbook, rowBrief } from "../engine/record.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -66,14 +66,13 @@ async function main() {
   // Trial runs written elsewhere with --out are not part of the client's record.
   if (!args.out) {
     const db = openDb();
-    registerClient(db, settings);
+    for (const file of saved.workbooks) await syncPurchaseWorkbook(db, settings, file, Number(/(d{4})/.exec(path.basename(file))?.[1]));
     const jobId = db.saveJob({
       clientId: settings.id,
       kind: "purchases",
       source: path.relative(process.cwd(), path.join(input.dir, input.singleFile ? input.files[0] : "")) || input.dir,
       options: { byPage: Boolean(args["by-page"]), secondModel: args["second-pass"] ?? null, model: settings.model },
-      summary: { files: summary.files, encoded: summary.encoded, manualChecking: summary.manualChecking, secondPass: summary.secondPass, cost: summary.cost },
-      rows: saved.added,
+      summary: { files: summary.files, encoded: summary.encoded, manualChecking: summary.manualChecking, secondPass: summary.secondPass, cost: summary.cost, added: saved.added.map(rowBrief) },
     });
     for (const call of calls) db.recordUsage({ jobId, clientId: settings.id, ...call });
     db.close();

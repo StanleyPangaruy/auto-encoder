@@ -56,6 +56,10 @@ const MIGRATIONS = [
      key    TEXT PRIMARY KEY,
      value  TEXT NOT NULL
    );`,
+  // Jobs run by the app have a life: queued, running, waiting for the user's decision, done or failed.
+  `ALTER TABLE jobs ADD COLUMN status TEXT NOT NULL DEFAULT 'done';
+   ALTER TABLE jobs ADD COLUMN error TEXT;
+   ALTER TABLE jobs ADD COLUMN finished_at TEXT;`,
 ];
 
 const json = (value) => JSON.stringify(value ?? {});
@@ -121,23 +125,52 @@ function wrap(db) {
       return c ? { ...c, settings: parse(c.settings) } : null;
     },
 
-    /** Records a job and the rows it produced, in order, in one transaction. Returns the job id. */
-    saveJob({ clientId, kind, origin = "run", source, options = {}, summary = {}, rows = [] }) {
-      return transaction(db, () => {
-        const { lastInsertRowid } = db
-          .prepare("INSERT INTO jobs (client_id, kind, origin, source, options, summary) VALUES (?, ?, ?, ?, ?, ?)")
-          .run(clientId, kind, origin, source, json(options), json(summary));
-        const jobId = Number(lastInsertRowid);
+    /** Starts a job record (status "queued" unless given). Returns the job id. */
+    createJob({ clientId, kind, origin = "run", source, options = {}, summary = {}, status = "queued" }) {
+      const { lastInsertRowid } = db
+        .prepare("INSERT INTO jobs (client_id, kind, origin, source, options, summary, status) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(clientId, kind, origin, source, json(options), json(summary), status);
+      return Number(lastInsertRowid);
+    },
+
+    /** Updates a job's status, summary or error. A finished status stamps the finish time. */
+    updateJob(id, { status, summary, error }) {
+      const job = db.prepare("SELECT status, summary, error FROM jobs WHERE id = ?").get(id);
+      if (!job) throw new Error(`No job ${id}`);
+      const next = status ?? job.status;
+      db.prepare(
+        `UPDATE jobs SET status = ?, summary = ?, error = ?,
+         finished_at = CASE WHEN ? IN ('done', 'failed', 'review') THEN datetime('now') ELSE finished_at END WHERE id = ?`,
+      ).run(next, summary ? json(summary) : job.summary, error ?? job.error, next, id);
+    },
+
+    getJob(id) {
+      const j = db.prepare("SELECT j.*, (SELECT COUNT(*) FROM rows r WHERE r.job_id = j.id) AS row_count FROM jobs j WHERE id = ?").get(id);
+      return j ? { ...j, options: parse(j.options), summary: parse(j.summary) } : null;
+    },
+
+    /** Replaces a job's rows with `rows`, in order, in one transaction. */
+    setJobRows(jobId, rows) {
+      const job = db.prepare("SELECT client_id, kind FROM jobs WHERE id = ?").get(jobId);
+      if (!job) throw new Error(`No job ${jobId}`);
+      transaction(db, () => {
+        db.prepare("DELETE FROM rows WHERE job_id = ?").run(jobId);
         const insert = db.prepare(
           `INSERT INTO rows (job_id, client_id, kind, year, sheet, position, data, remarks, source_file, source_page)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         );
         rows.forEach((row, position) => {
           const r = rowRecord(row);
-          insert.run(jobId, clientId, kind, r.year, r.sheet, position, json(r.data), r.remarks, r.sourceFile, r.page);
+          insert.run(jobId, job.client_id, job.kind, r.year, r.sheet, position, json(r.data), r.remarks, r.sourceFile, r.page);
         });
-        return jobId;
       });
+    },
+
+    /** Records a finished job and the rows it produced, in order. Returns the job id. */
+    saveJob({ clientId, kind, origin = "run", source, options = {}, summary = {}, rows = [] }) {
+      const jobId = api.createJob({ clientId, kind, origin, source, options, summary, status: "done" });
+      api.setJobRows(jobId, rows);
+      return jobId;
     },
 
     /** Removes earlier jobs of the same client, kind and source (a 2307 PDF re-encoded replaces its rows). */
@@ -145,13 +178,14 @@ function wrap(db) {
       db.prepare("DELETE FROM jobs WHERE client_id = ? AND kind = ? AND source = ?").run(clientId, kind, source);
     },
 
+    /** Jobs, newest first; one client's when `clientId` is given. */
     listJobs(clientId) {
       return db
         .prepare(
           `SELECT j.*, (SELECT COUNT(*) FROM rows r WHERE r.job_id = j.id) AS row_count
-           FROM jobs j WHERE client_id = ? ORDER BY j.id`,
+           FROM jobs j ${clientId ? "WHERE client_id = ?" : ""} ORDER BY j.id DESC`,
         )
-        .all(clientId)
+        .all(...(clientId ? [clientId] : []))
         .map((j) => ({ ...j, options: parse(j.options), summary: parse(j.summary) }));
     },
 

@@ -209,3 +209,27 @@ engine; next are the Clients and Encode screens, then the review screen, then ex
 Checked on 2026-11-16 by regenerating every client's workbooks from saved readings and comparing cell by
 cell: identical apart from changes explained by later improvements (supplier list knowledge, newer
 2307 checks) and one source file the user renamed.
+
+## The app (step 2, 2026-11-16)
+
+`start-app.cmd` (or `npm run app`) starts the server on http://localhost:3000, listening on this PC only,
+and opens the browser. `npm run build-web` rebuilds the screens after changing `web/`; for live editing run
+`npm run dev --prefix web` (port 5173, API calls go to the server on 3000).
+
+- `server/index.js`: Fastify routes: clients, sources (folders and PDFs already in raw/<client>), uploads
+  (into raw/<client>/<batch>/, or raw/<client>/ for a 2307 PDF; never overwrites, names are kept inside
+  the client folder), jobs, job progress as Server-Sent Events, second pass, costs, and opening a workbook
+  in Excel (only files under output/).
+- `server/clients.js`: the Clients screen edits the settings files (config.json for CYA,
+  clients/<id>.json for others). New clients get output/<folder>, raw/<folder> and their own supplier list.
+- `server/jobs.js`: one job at a time. The first reading uses the client's model; if anything was left in
+  doubt the job finishes with an offer to re-read it with Sonnet (estimate shown), which runs only when the
+  user presses the button (user's rule: ask before Sonnet). No offer for clients that already use Sonnet.
+- A purchases re-read replaces that job's rows in the workbook (the screen says so; the workbook is backed
+  up). A 2307 job never overwrites an existing workbook: a new run writes "<pdf> (2).xlsx" and so on.
+- Jobs cut off by closing the app are marked failed at the next start; re-running costs nothing for
+  documents already read.
+- `web/`: React + TypeScript + Mantine 8 + TanStack Query 5 + React Router 7, built with Vite 7 into
+  web/dist (ignored by git). Screens: Encode, Jobs, Job (progress, results, re-read offer), Clients.
+- Rows in the database belong to the workbook they are in (`engine/record.js` syncs a workbook after each
+  job). Jobs keep a summary, including a short list of the rows they added.

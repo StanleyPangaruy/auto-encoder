@@ -164,9 +164,12 @@ const pageOf = (row) => Number(/ \(page (\d+)\)$/.exec(row.source)?.[1] ?? 1);
 
 /**
  * Adds rows to the client's yearly workbooks in `outDir`, skipping documents already there.
+ * `replaceFiles` (source file names) are removed from the workbooks first, so a second reading of the
+ * same files replaces the first instead of being skipped as duplicates.
  * Returns what was added, what was skipped as a duplicate, and which workbooks were touched.
  */
-export async function savePurchaseWorkbooks({ settings, rows, outDir }) {
+export async function savePurchaseWorkbooks({ settings, rows, outDir, replaceFiles = [] }) {
+  const replacing = new Set(replaceFiles);
   const fileOrder = settings.layout === "file-order";
   const result = { added: [], duplicates: [], droppedReceipts: [], workbooks: [] };
   const byYear = Map.groupBy(rows, (r) => r.year);
@@ -175,6 +178,13 @@ export async function savePurchaseWorkbooks({ settings, rows, outDir }) {
     const file = path.join(resolve(outDir ?? settings.output), settings.workbookName.replace("{year}", year));
     const sheets = await readWorkbook(file, year);
     let changed = false;
+    if (replacing.size) {
+      for (const [sheet, existing] of Object.entries(sheets)) {
+        const kept = existing.filter((r) => !replacing.has(fileOf(r)));
+        if (kept.length !== existing.length) changed = true;
+        sheets[sheet] = kept;
+      }
+    }
     for (const [sheet, incoming] of Map.groupBy(yearRows, (r) => r.sheet)) {
       const merged = mergeRows(sheets[sheet] ?? [], incoming, { sort: !fileOrder });
       if (fileOrder) {

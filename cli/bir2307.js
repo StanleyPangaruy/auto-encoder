@@ -2,14 +2,14 @@
 //   node cli/bir2307.js --client <name> --in "<file.pdf>" [--pages 1-12] [--out <folder>] [--second-pass <model>]
 // --pages reads only part of the PDF (for a trial run). The workbook is named after the PDF.
 // --second-pass re-reads, with a stronger model, the pages whose first reading left something in doubt.
-// Each full run is also recorded in the app database, replacing an earlier run of the same PDF.
+// Each full run is also recorded in the app database: the job and its cost, and the workbook's rows.
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadSettings, resolve } from "../engine/settings.js";
 import { encodeCertificates } from "../engine/certificates.js";
 import { write2307Workbook } from "../engine/workbook2307.js";
 import { openDb } from "../engine/db.js";
-import { registerClient } from "../engine/clients.js";
+import { sync2307Workbook, rowBrief } from "../engine/record.js";
 
 const { values: args } = parseArgs({
   options: {
@@ -50,16 +50,14 @@ async function main() {
   // Trial runs (part of the PDF, or written elsewhere) are not part of the client's record.
   if (!args.pages && !args.out) {
     const db = openDb();
-    registerClient(db, settings);
+    await sync2307Workbook(db, settings, out);
     const source = path.relative(process.cwd(), resolve(args.in));
-    db.replaceJobsFor({ clientId: settings.id, kind: "2307", source });
     const jobId = db.saveJob({
       clientId: settings.id,
       kind: "2307",
       source,
       options: { model: settings.model, secondModel: args["second-pass"] ?? null },
-      summary: { pages: result.pages, rows: result.rows.length, reread: result.reread, cost: result.cost, clientTin: result.clientTin },
-      rows: result.rows.map((r) => ({ ...r, sheet: "2307", year: null, source: path.basename(args.in) })),
+      summary: { pages: result.pages, rows: result.rows.length, reread: result.reread, cost: result.cost, clientTin: result.clientTin, added: result.rows.map(rowBrief) },
     });
     for (const call of calls) db.recordUsage({ jobId, clientId: settings.id, ...call });
     db.close();
