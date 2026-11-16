@@ -1,0 +1,11 @@
+{
+  "buyerName": "CYA ELECTRICAL SUPPLY RETAIL CORPORATION",
+  "buyerTin": "010786993",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "concurrency": 4,
+  "inbox": "inbox",
+  "output": "output/CYA",
+  "workbookName": "PURCHASES {year}.xlsx",
+  "suppliersFile": "clients/cya.suppliers.csv"
+}

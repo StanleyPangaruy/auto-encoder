@@ -1,0 +1,19 @@
+{
+  "name": "purchase-encoder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Encodes scanned supplier invoices and receipts into the monthly purchases workbook",
+  "scripts": {
+    "encode": "node src/run.js",
+    "check": "node scripts/check-testfiles.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "exceljs": "^4.4.0",
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.34.0",
+    "zod": "^4.0.0"
+  }
+}

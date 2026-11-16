@@ -1,0 +1,8 @@
+{
+  "name": "purchase-encoder-n8n",
+  "private": true,
+  "description": "Local n8n install that runs the purchase encoder",
+  "dependencies": {
+    "n8n": "2.42.6"
+  }
+}

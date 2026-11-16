@@ -1,0 +1,9 @@
+node_modules/
+.env
+# Client documents and tax data stay off git
+raw/
+inbox/
+output/
+data/
+clients/*.csv
+n8n/data/

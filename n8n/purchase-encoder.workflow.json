@@ -1,0 +1,51 @@
+{
+  "id": "purchaseEncoder01",
+  "name": "Purchase Encoder",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "6f0c3a52-1b0e-4f0e-9a51-0d2c5f7a1001",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 10 }] }
+      },
+      "id": "6f0c3a52-1b0e-4f0e-9a51-0d2c5f7a1002",
+      "name": "Every 10 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "command": "node \"C:\\Users\\stanpy\\n8n-test\\src\\run.js\" --json"
+      },
+      "id": "6f0c3a52-1b0e-4f0e-9a51-0d2c5f7a1003",
+      "name": "Encode inbox",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [260, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The encoder prints one line of JSON describing the run.\nconst summary = JSON.parse($input.first().json.stdout);\nif (summary.error) throw new Error(summary.error);\nreturn [{ json: summary }];"
+      },
+      "id": "6f0c3a52-1b0e-4f0e-9a51-0d2c5f7a1004",
+      "name": "Run summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 100]
+    }
+  ],
+  "connections": {
+    "Run now": { "main": [[{ "node": "Encode inbox", "type": "main", "index": 0 }]] },
+    "Every 10 minutes": { "main": [[{ "node": "Encode inbox", "type": "main", "index": 0 }]] },
+    "Encode inbox": { "main": [[{ "node": "Run summary", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

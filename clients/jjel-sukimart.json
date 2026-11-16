@@ -1,0 +1,10 @@
+{
+  "buyerName": "JJEL MEYCAUAYAN SUKIMART INC",
+  "buyerTin": "651245228",
+  "model": "claude-haiku-5-5",
+  "output": "output/JJEL Sukimart",
+  "suppliersFile": "clients/jjel-sukimart.suppliers.csv",
+  "addressStyle": "full",
+  "layout": "file-order",
+  "inventoryHint": "groceries and other merchandise for a supermarket"
+}
