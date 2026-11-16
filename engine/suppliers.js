@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { config, resolve } from "./config.js";
+import { resolve } from "./settings.js";
 
-const FILE = resolve(config.suppliersFile ?? "suppliers.csv");
+// Each client has its own list; settings.suppliersFile says where.
+const fileOf = (settings) => resolve(settings.suppliersFile ?? "suppliers.csv");
 const COLUMNS = ["tin", "company", "address", "city", "nature", "particulars"];
 
 function parseLine(line) {
@@ -26,7 +27,8 @@ function parseLine(line) {
 const quote = (s) => (/[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
 /** The supplier master list, keyed by 9-digit TIN. Values here override what is read from a document. */
-export function loadSuppliers() {
+export function loadSuppliers(settings) {
+  const FILE = fileOf(settings);
   const map = new Map();
   if (!fs.existsSync(FILE)) return map;
   const lines = fs.readFileSync(FILE, "utf8").replace(/^﻿/, "").split(/\r?\n/).filter(Boolean);
@@ -38,7 +40,8 @@ export function loadSuppliers() {
   return map;
 }
 
-export function saveSuppliers(map) {
+export function saveSuppliers(settings, map) {
+  const FILE = fileOf(settings);
   const entries = [...map.values()].sort((a, b) => a.company.localeCompare(b.company));
   const lines = [COLUMNS.join(","), ...entries.map((e) => COLUMNS.map((c) => quote(e[c] ?? "")).join(","))];
   fs.mkdirSync(path.dirname(FILE), { recursive: true });

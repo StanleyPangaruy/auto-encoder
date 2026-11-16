@@ -16,13 +16,15 @@ clients/<name>.json         one client's settings
 clients/<name>.suppliers.csv  that client's supplier list (purchases)
 inbox/                      drop folder watched by n8n (CYA purchases)
 data/                       saved model answers, so nothing is paid for twice
-src/, scripts/, test/       the code
+engine/                     the engine: reading, row rules, workbooks, database (used by cli/ and the app)
+cli/                        command-line entry points
+scripts/, test/             maintenance scripts and tests
 n8n/                        local n8n install and its workflow
 ```
 
 | Client | Raw | Output | Settings |
 |---|---|---|---|
-| CYA Electrical Supply Retail Corp (TIN 010-786-993) | `raw/CYA/2026-07`, `2026-08`, `2026-09` | `output/CYA/PURCHASES 2026.xlsx` | `config.json` (the defaults), Sonnet 5.5 |
+| CYA Electrical Supply Retail Corp (TIN 010-786-993) | `raw/CYA/2026-07` to `2026-10` | `output/CYA/PURCHASES 2026.xlsx` | `config.json` (the defaults), Sonnet 5.5 |
 | JJEL Meycauayan Sukimart Inc (TIN 651-245-228) | `raw/JJEL Sukimart/Sept 2026` | `output/JJEL Sukimart/PURCHASES 2026.xlsx` | `clients/jjel-sukimart.json`, Haiku 5.5 |
 | Tayan Electrical (TIN 175-007-254) | `raw/Tayan/Tayan (1).pdf` | `output/Tayan/2307/Tayan_encoded.xlsx` | `clients/tayan.json`, Haiku 5.5 |
 
@@ -32,9 +34,9 @@ The user renamed Tayan's workbook to `Tayan_encoded.xlsx`. A re-run writes `Taya
 ## Commands
 
 ```
-node src/run.js --in "raw/CYA/2026-09" --keep                                  purchases, CYA
-node src/run.js --client jjel-sukimart --in "raw/JJEL Sukimart/Sept 2026" --keep  purchases, another client
-node src/run2307.js --client tayan --in "raw/Tayan/Tayan (1).pdf" [--pages 1-8]  BIR 2307
+node cli/purchases.js --in "raw/CYA/2026-09" --keep                                  purchases, CYA
+node cli/purchases.js --client jjel-sukimart --in "raw/JJEL Sukimart/Sept 2026" --keep  purchases, another client
+node cli/bir2307.js --client tayan --in "raw/Tayan/Tayan (1).pdf" [--pages 1-8]  BIR 2307
 node scripts/check-testfiles.js [folder]      compare readings with answers in CYA's file names
 node scripts/show-2307.js "<workbook>" [--flagged]
 npm test                                      offline tests, no API calls
@@ -56,8 +58,9 @@ The API key is in `.env`. Every file's answer is cached, so re-running a folder 
 
 ## Purchases encoder
 
-`src/extract.js` (prompt, schema, image preparation, cache) -> `src/rows.js` (row rules, duplicates) ->
-`src/workbook.js` (sheet layout) with `src/run.js` as the entry point and `src/suppliers.js` for the supplier list.
+`engine/extract.js` (prompt, schema, image preparation, cache) -> `engine/rows.js` (row rules, duplicates) ->
+`engine/workbook.js` (sheet layout), run by `engine/purchases.js`, with `cli/purchases.js` as the command line
+and `engine/suppliers.js` for the supplier list.
 
 Sheet: totals in row 1 (yellow, `TOTAL` in PARTICULARS), header in row 2, data from row 3.
 
@@ -103,7 +106,8 @@ The user has not yet said which to encode.
 
 ## BIR 2307 encoder
 
-`src/bir2307.js` (reads pages, builds rows) -> `src/workbook2307.js`, entry point `src/run2307.js`.
+`engine/bir2307.js` (reads pages, builds rows) -> `engine/workbook2307.js`, run by `engine/certificates.js`,
+command line `cli/bir2307.js`.
 
 - Columns: NO., MONTH, YR (left blank by the user's choice), TIN, COMPANY, LN, FN, MN, ADDRESS, CITY, AMOUNT,
   ATC, RATE, WTAX, then REMARKS and PAGE. The encoded party is the **payor** (Part II).
@@ -132,7 +136,7 @@ The user has not yet said which to encode.
 
 `start-n8n.cmd` starts the local n8n (http://localhost:5678) with the Execute Command node enabled
 (`NODES_EXCLUDE=[]`; n8n 2.x disables it by default) and its database in `n8n/data/`. The imported workflow
-`purchaseEncoder01` runs `node src/run.js --json` on `inbox/` every 10 minutes or on demand, for CYA only.
+`purchaseEncoder01` runs `node cli/purchases.js --json` on `inbox/` every 10 minutes or on demand, for CYA only.
 
 ## When changing the code
 
@@ -144,13 +148,13 @@ The user has not yet said which to encode.
 ## Receipt bundles and second readings (purchases)
 
 ```
-node src/run.js --client jjel-sukimart --in "raw/JJEL Sukimart/JJEL MEYCAUAYAN SUKIMART RECEIPTS.pdf" \
+node cli/purchases.js --client jjel-sukimart --in "raw/JJEL Sukimart/JJEL MEYCAUAYAN SUKIMART RECEIPTS.pdf" \
      --by-page --second-pass claude-sonnet-5-5 --sheet RECEIPTS --keep
 ```
 
 - `--in` may name one file. `--sheet` names the sheet for a file-order client.
 - `--by-page` reads each PDF page on its own: for bundles of till receipts scanned two to a page. Each
-  page is sent as the whole page plus its left and right halves enlarged (`src/pdfpages.js` recovers
+  page is sent as the whole page plus its left and right halves enlarged (`engine/pdfpages.js` recovers
   black-and-white fax-compressed scans at full resolution). Without it a PDF is read whole, which is
   right for multi-page invoices.
 - `--second-pass <model>` re-reads with a stronger model any page (or whole file) whose first reading
@@ -167,7 +171,7 @@ JJEL receipts bundle (2026-10-13): 44 pages, 86 rows, 31 pages given a second re
 ## 2307 second reading (2026-11-16)
 
 ```
-node src/run2307.js --client tayan --in "raw/Tayan/Tai-An Sales 2307 October 2026 (1).pdf" --second-pass claude-sonnet-5-5
+node cli/bir2307.js --client tayan --in "raw/Tayan/Tai-An Sales 2307 October 2026 (1).pdf" --second-pass claude-sonnet-5-5
 ```
 
 - `--second-pass <model>` re-reads with that model every page whose first reading left the reading in
@@ -180,3 +184,28 @@ node src/run2307.js --client tayan --in "raw/Tayan/Tai-An Sales 2307 October 202
   Its PDF sits in `raw/Tayan` and its workbook in `output/Tayan/2307` until the user decides whether it
   gets its own client folder.
 - Tai-An October 2026: 29 pages, Haiku then Sonnet on 13 pages, about $0.30, 9 rows left marked.
+
+## Engine and database (app step 1, 2026-11-16)
+
+The code is being turned into a local web app for one bookkeeper (the user's girlfriend), run on her PC
+in the browser. Planned stack: Node 24, Fastify server bound to 127.0.0.1, SQLite through `node:sqlite`,
+React + TypeScript + Vite with Mantine, TanStack Query, React Router. Step 1 (this) restructured the
+engine; next are the Clients and Encode screens, then the review screen, then export and a desktop shortcut.
+
+- `engine/settings.js`: `loadSettings({ client, model })` returns one client's settings. Nothing in the
+  engine reads global settings or command-line flags any more, so one server can serve every client.
+- `engine/purchases.js` and `engine/certificates.js` are the jobs (`readPurchases`, `buildPurchaseRows`,
+  `savePurchaseWorkbooks`; `encodeCertificates`). They report progress and every paid call's cost
+  through callbacks.
+- `engine/db.js`: the database, `data/app.db` (ignored by git; copying it is a backup). Tables: clients,
+  jobs, rows (row fields as JSON plus sheet, position, source file and page, checked), usage (cost per
+  call), app_settings. Schema changes go in as new entries at the end of `MIGRATIONS`.
+- The command-line runs record each job, its rows and its cost in the database. Trial runs (`--out`,
+  `--pages`) are not recorded. A 2307 PDF encoded again replaces its earlier job.
+- `npm run import-db` (`scripts/import-to-db.js`) loads the current workbooks into the database,
+  including corrections typed in Excel. Safe to repeat.
+- Until the app exists, the workbooks remain what the user works in; the database is kept alongside.
+
+Checked on 2026-11-16 by regenerating every client's workbooks from saved readings and comparing cell by
+cell: identical apart from changes explained by later improvements (supplier list knowledge, newer
+2307 checks) and one source file the user renamed.

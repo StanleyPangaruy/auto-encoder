@@ -1,4 +1,4 @@
-import { config, MONTHS, PARTICULARS, UNDATED } from "./config.js";
+import { MONTHS, PARTICULARS, UNDATED } from "./settings.js";
 
 export const MANUAL = "FOR MANUAL CHECKING";
 const DR_NOTE = "DELIVERY RECEIPT, NO INVOICE";
@@ -7,7 +7,7 @@ const VAT_TOLERANCE = 0.5;
 const upper = (s) => (s ?? "").toString().trim().replace(/\s+/g, " ").toUpperCase();
 const round2 = (n) => Math.round(n * 100) / 100;
 // Full addresses are written without punctuation, as in the user's sheets.
-const addressText = (s) => (config.addressStyle === "full" ? upper((s ?? "").replace(/[.,]/g, " ")) : upper(s));
+const addressText = (s, style) => (style === "full" ? upper((s ?? "").replace(/[.,]/g, " ")) : upper(s));
 
 export function cleanTin(tin) {
   const digits = (tin ?? "").replace(/\D/g, "");
@@ -32,8 +32,9 @@ function parseDate(iso) {
 /**
  * Turns one extracted document into a sheet row.
  * A row's `vat` is "auto" (NET and INPUT VAT are formulas) or "manual" (the three VAT cells are left for the user).
+ * `buyerTin` and `addressStyle` come from the client's settings; `today` decides which years look misread.
  */
-export function toRow(doc, source, supplier, today = new Date()) {
+export function toRow(doc, source, supplier, { buyerTin, addressStyle, today = new Date() } = {}) {
   const issues = [];
   const illegible = new Set(doc.illegible_fields);
   const currentYear = today.getFullYear();
@@ -47,7 +48,7 @@ export function toRow(doc, source, supplier, today = new Date()) {
   }
 
   let tin = supplier?.tin || cleanTin(doc.supplier_tin);
-  if (tin && tin === config.buyerTin) {
+  if (tin && tin === buyerTin) {
     tin = "";
     issues.push("TIN READ WAS THE BUYER'S");
   } else if (tin && tin.length < 9) {
@@ -90,8 +91,8 @@ export function toRow(doc, source, supplier, today = new Date()) {
     last: upper(doc.last_name),
     first: upper(doc.first_name),
     middle: upper(doc.middle_name),
-    address: addressText(supplier?.address || doc.address),
-    city: addressText(supplier?.city || doc.city),
+    address: addressText(supplier?.address || doc.address, addressStyle),
+    city: addressText(supplier?.city || doc.city, addressStyle),
     nature: supplier?.nature || PARTICULARS[particulars] || "",
     particulars,
     amount,
@@ -101,6 +102,7 @@ export function toRow(doc, source, supplier, today = new Date()) {
     nonVat: null,
     remarks: issues.length ? `${MANUAL}: ${issues.join("; ")}` : "",
     source: doc.first_page > 1 ? `${source} (page ${doc.first_page})` : source,
+    page: doc.first_page ?? null,
   };
 }
 

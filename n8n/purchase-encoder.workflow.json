@@ -22,7 +22,7 @@
     },
     {
       "parameters": {
-        "command": "node \"C:\\Users\\stanpy\\n8n-test\\src\\run.js\" --json"
+        "command": "node \"C:\\Users\\stanpy\\n8n-test\\cli\\purchases.js\" --json"
       },
       "id": "6f0c3a52-1b0e-4f0e-9a51-0d2c5f7a1003",
       "name": "Encode inbox",

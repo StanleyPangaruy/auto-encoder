@@ -7,7 +7,8 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 import sharp from "sharp";
-import { config, MONTHS, ROOT } from "./config.js";
+import { MONTHS, ROOT } from "./settings.js";
+import { costOf } from "./pricing.js";
 import { cleanTin, MANUAL } from "./rows.js";
 
 const cacheDir = (model) => path.join(ROOT, "data", "cache-2307", model);
@@ -123,15 +124,19 @@ async function pageContent(page) {
   return [imageBlock(upright), imageBlock(top)];
 }
 
-/** Reads one page. Results are cached by the source file and page number, so re-runs cost nothing. */
-export async function readPage(fileHash, pageNumber, page, model = config.model) {
+/**
+ * Reads one page with `model`. Results are saved by the source file and page number, so re-runs cost
+ * nothing. `onUsage({ model, inputTokens, outputTokens, cost })` is called for each paid call.
+ */
+export async function readPage(fileHash, pageNumber, page, { model, effort = "high", onUsage } = {}) {
+  if (!model) throw new Error("readPage needs a model");
   const cacheFile = path.join(cacheDir(model), `${fileHash}-p${String(pageNumber).padStart(4, "0")}.json`);
   if (fs.existsSync(cacheFile)) return JSON.parse(fs.readFileSync(cacheFile, "utf8"));
 
   const response = await getClient().messages.parse({
     model,
     max_tokens: 8000,
-    output_config: { effort: config.effort2307 ?? "high", format: zodOutputFormat(Certificate) },
+    output_config: { effort, format: zodOutputFormat(Certificate) },
     system: SYSTEM,
     messages: [
       {
@@ -140,6 +145,9 @@ export async function readPage(fileHash, pageNumber, page, model = config.model)
       },
     ],
   });
+  const inputTokens = response.usage.input_tokens;
+  const outputTokens = response.usage.output_tokens;
+  onUsage?.({ model, inputTokens, outputTokens, cost: costOf(model, inputTokens, outputTokens) });
   if (response.stop_reason === "refusal") throw new Error("the model declined to read this page");
   if (!response.parsed_output) throw new Error("the model returned an unreadable answer");
 

@@ -4,8 +4,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { config, resolve, ROOT } from "../src/config.js";
+import { loadSettings, resolve, ROOT } from "../engine/settings.js";
 
+const clientAt = process.argv.indexOf("--client");
+const config = loadSettings({ client: clientAt > 0 ? process.argv[clientAt + 1] : undefined });
 const rest = process.argv.slice(2).filter((a, i, all) => a !== "--client" && all[i - 1] !== "--client");
 const [file, range] = rest;
 const [from, to] = range.split("-").map(Number);

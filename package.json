@@ -5,8 +5,10 @@
   "type": "module",
   "description": "Encodes scanned supplier invoices and receipts into the monthly purchases workbook",
   "scripts": {
-    "encode": "node src/run.js",
+    "encode": "node cli/purchases.js",
+    "encode-2307": "node cli/bir2307.js",
     "check": "node scripts/check-testfiles.js",
+    "import-db": "node scripts/import-to-db.js",
     "test": "node --test"
   },
   "dependencies": {

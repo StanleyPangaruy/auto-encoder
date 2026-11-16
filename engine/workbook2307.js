@@ -81,3 +81,40 @@ export async function write2307Workbook(file, rows) {
     throw err;
   }
 }
+
+/** Reads a 2307 list back, including any corrections typed into it in Excel. */
+export async function read2307Workbook(file) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(file);
+  const ws = wb.worksheets[0];
+  const value = (r, h) => {
+    const v = ws.getCell(r, COL[h]).value;
+    return v && typeof v === "object" ? (v.result ?? v.text ?? null) : v;
+  };
+  const text = (r, h) => String(value(r, h) ?? "").trim();
+  const number = (r, h) => {
+    const v = value(r, h);
+    return v === null || v === "" || isNaN(Number(v)) ? null : Number(v);
+  };
+  const rows = [];
+  for (let r = FIRST_DATA_ROW; r <= ws.rowCount; r++) {
+    if (!text(r, "COMPANY") && !text(r, "TIN") && number(r, "AMOUNT") == null && !text(r, "REMARKS")) continue;
+    rows.push({
+      page: number(r, "PAGE"),
+      month: text(r, "MONTH"),
+      tin: text(r, "TIN"),
+      company: text(r, "COMPANY"),
+      last: text(r, "LN"),
+      first: text(r, "FN"),
+      middle: text(r, "MN"),
+      address: text(r, "ADDRESS"),
+      city: text(r, "CITY"),
+      amount: number(r, "AMOUNT"),
+      atc: text(r, "ATC"),
+      rate: number(r, "RATE"),
+      wtax: number(r, "WTAX"),
+      remarks: text(r, "REMARKS"),
+    });
+  }
+  return rows;
+}

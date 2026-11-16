@@ -5,11 +5,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import sharp from "sharp";
-import { config, PARTICULARS, ROOT } from "./config.js";
+import { PARTICULARS, ROOT } from "./settings.js";
+import { costOf } from "./pricing.js";
 import { splitPdf } from "./pdfpages.js";
 
-// One folder per model, so trying another model never reuses or overwrites these answers.
-const cacheDir = (model) => path.join(ROOT, "data", "cache", ...(config.client ? [config.client] : []), model);
 const MAX_IMAGE_EDGE = 2400;
 const MAX_PDF_BYTES = 30 * 1024 * 1024;
 // The most a single non-streamed answer may be; a long bundle that needs more is read page by page instead.
@@ -52,16 +51,16 @@ const Document = z.object({
 const Extraction = z.object({ documents: z.array(Document) });
 
 // Two address styles: the first client keeps only the district; others keep the whole street address.
-const ADDRESS_RULES =
-  config.addressStyle === "full"
+const addressRules = (settings) =>
+  settings.addressStyle === "full"
     ? `- address: the supplier's address as printed in the header, without its last part (the city or province) and without the zip code or country. For "Block 13 Lot 5 Mindanao Ave, Gavino Maderan, General Mariano Alvarez, Cavite" this is "BLOCK 13 LOT 5 MINDANAO AVE GAVINO MADERAN GENERAL MARIANO ALVAREZ".
 - city: the last part of the supplier's address: the province for an address outside Metro Manila (CAVITE, LAGUNA, BULACAN), or the city for one inside it (QUEZON CITY, MANILA).`
     : `- address: the district or municipality from the supplier's address, such as BINONDO, SANTA CRUZ, MORONG.
 - city: the city or province from the supplier's address, such as MANILA, CALOOCAN CITY, RIZAL.`;
 
-const SYSTEM = `You read scanned and photographed Philippine business documents for a bookkeeper who encodes purchases for VAT reporting.
+const systemPrompt = (settings) => `You read scanned and photographed Philippine business documents for a bookkeeper who encodes purchases for VAT reporting.
 
-The bookkeeper works for the BUYER: ${config.buyerName}${config.buyerTin ? ` (TIN ${config.buyerTin})` : ""}. The buyer's name, TIN and address appear in the "Sold to" section of most documents. They are never the supplier's details.
+The bookkeeper works for the BUYER: ${settings.buyerName}${settings.buyerTin ? ` (TIN ${settings.buyerTin})` : ""}. The buyer's name, TIN and address appear in the "Sold to" section of most documents. They are never the supplier's details.
 
 The file may contain one document or several (a multi-page PDF, or several receipts in one photo). Return one entry per document, in the order they appear. A long invoice can run over several pages ("Page 1 of 3", with the grand total on the last page); that is one document, not one per page. Two pages with different invoice numbers are two documents.
 
@@ -76,16 +75,16 @@ What each field means:
 - On a till receipt the supplier is the business named at the top with its VAT Reg TIN. The POS provider or machine supplier printed in the footer (with its own TIN and accreditation number) is not the supplier.
 - supplier_tin: the supplier's TIN from the header ("VAT Reg. TIN" or "Non-VAT Reg. TIN"), as printed. Not the printer's TIN in the footer.
 - last_name, first_name, middle_name: fill these only when the supplier is an individual with no business name. Otherwise null.
-${ADDRESS_RULES}
+${addressRules(settings)}
 - total_amount: the final amount payable (Total Amount Due, VAT inclusive). When the line items add up to more than the written total, the written total is the one to use. When a total has been crossed out and a new figure written beside it, the new figure is the amount; say so in notes.
 - vat_status: "vat" when the supplier is VAT registered and the sale is an ordinary VATable sale. "non_vat" when the header says Non-VAT. "exempt_or_mixed" when any VAT-exempt or zero-rated amount is filled in. "unclear" when you cannot tell.
 - printed_vat_amount: the VAT amount written on the document, when one is filled in.
-- particulars: what the purchase is for the buyer. INVENTORY is merchandise or materials for resale or jobs (for this buyer: ${config.inventoryHint ?? "electrical goods, hardware, appliances"}). OFFICE SUPPLIES is consumables for the office. FUEL AND OIL is gasoline, diesel and lubricants. UTILITIES EXPENSE is electricity, water, telephone, internet. REPRESENTATION EXPENSE is restaurant and other dine-in or take-out food receipts, and nothing else. Null when none of these fits.
+- particulars: what the purchase is for the buyer. INVENTORY is merchandise or materials for resale or jobs (for this buyer: ${settings.inventoryHint ?? "electrical goods, hardware, appliances"}). OFFICE SUPPLIES is consumables for the office. FUEL AND OIL is gasoline, diesel and lubricants. UTILITIES EXPENSE is electricity, water, telephone, internet. REPRESENTATION EXPENSE is restaurant and other dine-in or take-out food receipts, and nothing else. Null when none of these fits.
 
 Accuracy matters more than completeness, because these figures go into tax filings. Read handwriting when you can make it out with confidence. When a field is present but you cannot read it reliably, set it to null and add its name to illegible_fields (one of: ${FIELDS.join(", ")}); a blank the bookkeeper fills in by hand is far better than a wrong digit. When a field simply is not on the document, set it to null and leave it out of illegible_fields. Set confidence to "low" when the scan is poor enough that the bookkeeper should compare the whole row against the paper. Use notes for anything the bookkeeper should know, in one short sentence, or an empty string.`;
 
-let client;
-const getClient = () => (client ??= new Anthropic());
+let anthropic;
+const getAnthropic = () => (anthropic ??= new Anthropic());
 
 // File extensions are unreliable (some scans have none), so sharp sniffs the real format.
 function toJpeg(buf, maxEdge) {
@@ -115,20 +114,6 @@ async function toContentBlock(file) {
 const imageBlock = (jpeg) => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } });
 const pdfBlock = (pdf) => ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdf.toString("base64") } });
 
-async function callModel(blocks, instruction, model = config.model) {
-  const response = await getClient().messages.parse({
-    model,
-    max_tokens: MAX_TOKENS,
-    output_config: { effort: config.effort, format: zodOutputFormat(Extraction) },
-    system: SYSTEM,
-    messages: [{ role: "user", content: [...blocks, { type: "text", text: instruction }] }],
-  });
-  if (response.stop_reason === "refusal") throw new Error("the model declined to read this file");
-  if (response.stop_reason === "max_tokens") throw new TooLong();
-  if (!response.parsed_output) throw new Error("the model returned an unreadable answer");
-  return response.parsed_output.documents;
-}
-
 class TooLong extends Error {}
 
 const WHOLE_FILE = "Extract every document in this file.";
@@ -150,7 +135,7 @@ async function pageBlocks(page) {
   ];
 }
 
-const hashOf = (file) => crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex");
+export const hashOf = (file) => crypto.createHash("sha1").update(fs.readFileSync(file)).digest("hex");
 
 function cached(file, load) {
   if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, "utf8")).documents;
@@ -167,34 +152,6 @@ const pages = (file) => pagesOf.get(file) ?? pagesOf.set(file, splitPdf(file)).g
 /** How many pages a PDF has. */
 export const pageCount = async (file) => (await pages(file)).length;
 
-/**
- * Reads one page of a PDF on its own, with the given model. Used for bundles of small receipts, and to
- * give a page a second reading by a stronger model. Cached per model and page.
- */
-export async function extractPage(file, pageNumber, model = config.model) {
-  const cacheFile = path.join(cacheDir(model), `${hashOf(file)}-p${String(pageNumber).padStart(4, "0")}.json`);
-  const documents = await cached(cacheFile, async () => callModel(await pageBlocks((await pages(file))[pageNumber - 1]), ONE_PAGE, model));
-  return documents.map((d) => ({ ...d, first_page: pageNumber }));
-}
-
-// A bundle can be too long for one answer. Reading it a page at a time always fits,
-// at the cost of treating each page as its own document.
-async function readPageByPage(file, model) {
-  const documents = [];
-  for (let n = 1; n <= (await pageCount(file)); n++) documents.push(...(await extractPage(file, n, model)));
-  return documents;
-}
-
-/** Returns the documents found in a whole file. Results are cached by file content, so re-runs cost nothing. */
-export async function extractFile(file, model = config.model) {
-  return cached(path.join(cacheDir(model), `${hashOf(file)}.json`), async () =>
-    callModel([await toContentBlock(file)], WHOLE_FILE, model).catch((err) => {
-      if (err instanceof TooLong) return readPageByPage(file, model);
-      throw err;
-    }),
-  );
-}
-
 export const isPdf = (file) => {
   const fd = fs.openSync(file, "r");
   const head = Buffer.alloc(4);
@@ -202,3 +159,60 @@ export const isPdf = (file) => {
   fs.closeSync(fd);
   return head.toString("latin1") === "%PDF";
 };
+
+/**
+ * A reader for one client's purchase documents. Every model answer is saved under data/cache (one
+ * folder per client and model), so reading the same file again costs nothing.
+ * `onUsage({ model, inputTokens, outputTokens, cost })` is called for each paid call.
+ */
+export function createReader(settings, { onUsage } = {}) {
+  const system = systemPrompt(settings);
+  // One folder per model, so trying another model never reuses or overwrites these answers.
+  const cacheDir = (model) => path.join(ROOT, "data", "cache", ...(settings.client ? [settings.client] : []), model);
+
+  async function callModel(blocks, instruction, model) {
+    const response = await getAnthropic().messages.parse({
+      model,
+      max_tokens: MAX_TOKENS,
+      output_config: { effort: settings.effort, format: zodOutputFormat(Extraction) },
+      system,
+      messages: [{ role: "user", content: [...blocks, { type: "text", text: instruction }] }],
+    });
+    const usage = { model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens };
+    onUsage?.({ ...usage, cost: costOf(model, usage.inputTokens, usage.outputTokens) });
+    if (response.stop_reason === "refusal") throw new Error("the model declined to read this file");
+    if (response.stop_reason === "max_tokens") throw new TooLong();
+    if (!response.parsed_output) throw new Error("the model returned an unreadable answer");
+    return response.parsed_output.documents;
+  }
+
+  /**
+   * Reads one page of a PDF on its own. Used for bundles of small receipts, and to give a page a second
+   * reading by a stronger model. Saved per model and page.
+   */
+  async function extractPage(file, pageNumber, model = settings.model) {
+    const cacheFile = path.join(cacheDir(model), `${hashOf(file)}-p${String(pageNumber).padStart(4, "0")}.json`);
+    const documents = await cached(cacheFile, async () => callModel(await pageBlocks((await pages(file))[pageNumber - 1]), ONE_PAGE, model));
+    return documents.map((d) => ({ ...d, first_page: pageNumber }));
+  }
+
+  // A bundle can be too long for one answer. Reading it a page at a time always fits,
+  // at the cost of treating each page as its own document.
+  async function readPageByPage(file, model) {
+    const documents = [];
+    for (let n = 1; n <= (await pageCount(file)); n++) documents.push(...(await extractPage(file, n, model)));
+    return documents;
+  }
+
+  /** Returns the documents found in a whole file. */
+  async function extractFile(file, model = settings.model) {
+    return cached(path.join(cacheDir(model), `${hashOf(file)}.json`), async () =>
+      callModel([await toContentBlock(file)], WHOLE_FILE, model).catch((err) => {
+        if (err instanceof TooLong) return readPageByPage(file, model);
+        throw err;
+      }),
+    );
+  }
+
+  return { extractFile, extractPage };
+}

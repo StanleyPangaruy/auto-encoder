@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
-import { MONTHS, UNDATED } from "./config.js";
+import { MONTHS, UNDATED } from "./settings.js";
 import { MANUAL } from "./rows.js";
 
 const HEADERS = [

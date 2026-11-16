@@ -3,9 +3,12 @@
 //   node scripts/check-testfiles.js [folder]   (default: raw/CYA/2026-09)
 import fs from "node:fs";
 import path from "node:path";
-import { config, resolve } from "../src/config.js";
-import { extractFile } from "../src/extract.js";
-import { cleanNumber } from "../src/rows.js";
+import { loadSettings, resolve } from "../engine/settings.js";
+import { createReader } from "../engine/extract.js";
+import { cleanNumber } from "../engine/rows.js";
+
+const config = loadSettings();
+const { extractFile } = createReader(config);
 
 const dir = resolve(process.argv[2] ?? "raw/CYA/2026-09");
 const NAME = /^(.+?) (\d{4}-\d{2}-\d{2}) (?:[A-Z]{2}-)?(\d+) ([\d,]+(?:\.\d+)?)[_ ]*(?:\.?(?:png|jpe?g))?$/i;
